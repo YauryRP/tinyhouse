@@ -1,45 +1,68 @@
 #include "mbed.h"
-#include "max7219.h"
+//Servomotor und Ldrs
+PwmOut motor(PA_6);
+AnalogIn ldrLinks(PA_0);
+AnalogIn ldrRechts(PA_1);
 
-SPI spi(D11, NC, D13);
-Max7219 display(&spi, D10);
+// LEDs
+DigitalOut ledBlau(PB_10);
+DigitalOut ledOrage(PA_9);
+DigitalOut ledGruen(PB_5);
+DigitalOut ledRot(PB_4);
+DigitalOut ledHaus(PB_3);
 
-// Bitmap-Daten
-const uint8_t H[8] = {0b10000010, 0b10000010, 0b11111110, 0b10000010, 0b10000010, 0b10000010, 0b10000010, 0b00000000};
-const uint8_t O[8] = {0b01111100, 0b10000010, 0b10000010, 0b10000010, 0b10000010, 0b10000010, 0b01111100, 0b00000000};
-const uint8_t L[8] = {0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b10000000, 0b11111110, 0b00000000};
-const uint8_t A[8] = {0b11111110, 0b10000010, 0b10000010, 0b11111110, 0b10000010, 0b10000010, 0b10000010, 0b00000000};
+// Schalter 
+DigitalIn Schalter(D7, PullUp);
 
+// LED Array
+DigitalOut* leds[] = {&ledBlau, &ledOrage, &ledGruen, &ledRot, &ledHaus};
+const int anzahlLeds = sizeof(leds) / sizeof(leds[0]);
 
-void show_char(uint8_t address, const uint8_t *bitmap) {
-    for (int row = 0; row < 8; row++) {
-        display.write_digit(address + 1, row + 1, bitmap[row]);
-    }
-    wait_us(100);
-}
+bool lichtAn = false;  
+bool letzterTasterZustand = 1; 
+
 
 int main() {
-    display.set_num_devices(4);
-
-    max7219_configuration_t cfg = {
-        .device_number = 1,
-        .decode_mode   = 0x00,  // Kein BCD-Decode
-        .intensity     = 7,
-        .scan_limit    = 7      // 8 Zeilen (0-7)
-    };
-
-    display.init_display(cfg);
-    display.enable_display();
-    display.display_all_off();
-    wait_us(100);
-
-    show_char(3, H);
-    show_char(0, A);
-    show_char(2, O);
-    show_char(1, L);
-
+    motor.period_ms(20);
 
     while (true) {
-        // Endlosschleife
+        
+        bool aktuellerTaster = Schalter.read();
+
+        if (letzterTasterZustand == 1 && aktuellerTaster == 0) {
+            lichtAn = !lichtAn; 
+        }
+
+        letzterTasterZustand = aktuellerTaster;
+        
+        
+        if (lichtAn) {
+            for (int i = 0; i < anzahlLeds; i++) {
+                for (int j = 0; j < anzahlLeds; j++) {
+                    (*leds[j]) = (j == i); 
+                    ledHaus = 1;
+                }
+                ThisThread::sleep_for(200ms);
+            }
+        } else {
+          
+            for (int i = 0; i < anzahlLeds; i++) {
+                (*leds[i]) = 0;
+                ledHaus = 0;
+            }
+        }
+
+        //Solaranlageführung
+        float rechts = ldrRechts.read();
+        float links = ldrLinks.read();
+        float diff = links - rechts;
+        float pos = 0.075f + diff * 0.025f;
+
+        if (pos < 0.05f) pos = 0.05f;
+        if (pos > 0.10f) pos = 0.10f;
+
+        motor.write(pos);
+
+        ThisThread::sleep_for(300ms); 
     }
 }
